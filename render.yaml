@@ -1,3 +1,4 @@
+
 services:
   - type: web
     name: svg-to-tgs-bot
@@ -7,21 +8,13 @@ services:
     envVars:
       - key: ENVIRONMENT
         value: production
-      - key: PORT
-        value: 8000
       - key: DATABASE_PATH
         value: bot_database.db
       - key: BOT_TOKEN
         sync: false
       - key: ADMIN_ID
         sync: false
-      - key: RENDER_EXTERNAL_HOSTNAME
-        fromService:
-          type: web
-          name: svg-to-tgs-bot
-          property: host
     autoDeploy: true
-    healthCheckPath: /
     disk:
       name: sqlite-disk
       mountPath: /opt/render/project/src

@@ -1,3 +1,4 @@
+
 #!/usr/bin/env python3
 """
 Telegram SVG to TGS Converter Bot
@@ -34,17 +35,16 @@ from telegram.constants import ParseMode
 from telegram.error import TelegramError
 
 # SVG and TGS conversion libraries
-import lottie
-from PIL import Image
-# Note: cairosvg requires system cairo library which may not be available
-# For deployment, ensure cairo is installed or use a simpler conversion method
-CAIRO_AVAILABLE = False
 try:
-    import cairosvg
-    CAIRO_AVAILABLE = True
-except (ImportError, OSError) as e:
-    print(f"cairosvg not available - SVG rendering will be limited: {e}")
-    # This is normal in environments without system cairo libraries
+    from lottie import objects
+    from lottie.exporters import export_tgs
+    from lottie.importers import import_svg
+    LOTTIE_AVAILABLE = True
+except ImportError:
+    LOTTIE_AVAILABLE = False
+    print("Warning: lottie library not available")
+
+from PIL import Image
 
 # Configure logging
 logging.basicConfig(
@@ -196,7 +196,7 @@ class SVGToTGSConverter:
                     # More flexible SVG validation
                     content_lower = content.lower().strip()
                     if '<svg' not in content_lower:
-                        logger.error(f"Invalid SVG format - missing <svg> tag in content: {content[:200]}")
+                        logger.error(f"Invalid SVG format - missing <svg> tag")
                         return False, "Invalid SVG format - missing <svg> tag"
                     
                     # Basic validation passed
@@ -213,7 +213,7 @@ class SVGToTGSConverter:
     @staticmethod
     async def convert_svg_to_tgs(svg_path: str, output_path: str) -> tuple[bool, str]:
         """
-        Convert SVG file to TGS format using lottie_convert.py command line tool.
+        Convert SVG file to TGS format using lottie library.
         
         Args:
             svg_path: Path to the input SVG file
@@ -223,53 +223,34 @@ class SVGToTGSConverter:
             Tuple of (success, error_message)
         """
         try:
+            if not LOTTIE_AVAILABLE:
+                return False, "Lottie library not available"
+            
             logger.info(f"Starting conversion: {svg_path} -> {output_path}")
             
-            # Use the lottie_convert.py script directly
-            lottie_convert_path = "/home/runner/workspace/.pythonlibs/bin/lottie_convert.py"
-            cmd = [
-                'python', lottie_convert_path,
-                svg_path,
-                output_path,
-                '--sanitize',  # Apply Telegram sticker requirements
-                '--width', '512',   # Force width to 512
-                '--height', '512',  # Force height to 512
-                '--fps', '30'       # Set frame rate
-            ]
+            # Import SVG using lottie
+            animation = import_svg(svg_path)
             
-            logger.info(f"Running conversion command: {' '.join(cmd)}")
+            # Set animation properties for Telegram sticker
+            animation.frame_rate = 30
+            animation.in_point = 0
+            animation.out_point = 30  # 1 second at 30fps
             
-            # Run conversion in subprocess
-            process = await asyncio.create_subprocess_exec(
-                *cmd,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE
-            )
+            # Ensure size is 512x512
+            animation.width = 512
+            animation.height = 512
             
-            stdout, stderr = await process.communicate()
-            
-            # Log output for debugging
-            if stdout:
-                logger.info(f"Conversion stdout: {stdout.decode('utf-8')}")
-            if stderr:
-                logger.warning(f"Conversion stderr: {stderr.decode('utf-8')}")
-            
-            # Check if conversion was successful
-            if process.returncode != 0:
-                error_msg = stderr.decode('utf-8') if stderr else "Unknown error"
-                logger.error(f"Conversion failed with return code {process.returncode}: {error_msg}")
-                return False, f"Conversion failed: {error_msg}"
+            # Export to TGS format
+            with open(output_path, 'wb') as tgs_file:
+                export_tgs(animation, tgs_file)
             
             # Check if output file exists and has content
             if not os.path.exists(output_path) or os.path.getsize(output_path) == 0:
                 logger.error("Conversion completed but no TGS file was generated")
                 return False, "No TGS file was generated"
             
-            # Validate TGS file size (should be under 64KB for Telegram)
+            # Validate TGS file size
             file_size = os.path.getsize(output_path)
-            if file_size > 64 * 1024:  # 64KB limit
-                logger.warning(f"Generated TGS file is {file_size} bytes, which exceeds Telegram's 64KB limit")
-            
             logger.info(f"Successfully converted SVG to TGS. Output file: {output_path} ({file_size} bytes)")
             return True, ""
             
@@ -283,7 +264,7 @@ class TelegramBot:
     def __init__(self):
         self.db = DatabaseManager(DATABASE_PATH)
         self.converter = SVGToTGSConverter()
-        self.pending_files = {}  # Store files being processed by user
+        self.user_batches = {}  # Store batches being processed
     
     async def start_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handle /start command."""
@@ -406,61 +387,13 @@ class TelegramBot:
             f"📡 Broadcasting to {len(user_ids)} users..."
         )
         
-        # Check if replying to a message with media
-        if update.message.reply_to_message:
-            reply_msg = update.message.reply_to_message
-            
-            for user_id in user_ids:
-                try:
-                    if reply_msg.photo:
-                        await context.bot.send_photo(
-                            user_id, 
-                            reply_msg.photo[-1].file_id, 
-                            caption=message_text
-                        )
-                    elif reply_msg.video:
-                        await context.bot.send_video(
-                            user_id, 
-                            reply_msg.video.file_id, 
-                            caption=message_text
-                        )
-                    elif reply_msg.document:
-                        await context.bot.send_document(
-                            user_id, 
-                            reply_msg.document.file_id, 
-                            caption=message_text
-                        )
-                    else:
-                        await context.bot.send_message(user_id, message_text)
-                    
-                    success_count += 1
-                    
-                except Exception as e:
-                    logger.warning(f"Failed to send broadcast to {user_id}: {e}")
-                    failed_count += 1
-                
-                # Update status every 10 messages
-                if (success_count + failed_count) % 10 == 0:
-                    await status_message.edit_text(
-                        f"📡 Progress: {success_count + failed_count}/{len(user_ids)}\n"
-                        f"✅ Sent: {success_count} | ❌ Failed: {failed_count}"
-                    )
-        else:
-            # Text-only broadcast
-            for user_id in user_ids:
-                try:
-                    await context.bot.send_message(user_id, message_text)
-                    success_count += 1
-                except Exception as e:
-                    logger.warning(f"Failed to send broadcast to {user_id}: {e}")
-                    failed_count += 1
-                
-                # Update status every 10 messages
-                if (success_count + failed_count) % 10 == 0:
-                    await status_message.edit_text(
-                        f"📡 Progress: {success_count + failed_count}/{len(user_ids)}\n"
-                        f"✅ Sent: {success_count} | ❌ Failed: {failed_count}"
-                    )
+        for user_id in user_ids:
+            try:
+                await context.bot.send_message(user_id, message_text)
+                success_count += 1
+            except Exception as e:
+                logger.warning(f"Failed to send broadcast to {user_id}: {e}")
+                failed_count += 1
         
         # Final status
         await status_message.edit_text(
@@ -501,56 +434,63 @@ class TelegramBot:
             )
             return
         
-        # Store file for batch processing
         user_id = user.id
-        if user_id not in self.pending_files:
-            self.pending_files[user_id] = {
+        
+        # Initialize batch for this user if not exists
+        if user_id not in self.user_batches:
+            self.user_batches[user_id] = {
                 'files': [],
-                'progress_msg': None,
-                'processing': False
+                'timer_task': None,
+                'progress_msg': None
             }
         
-        self.pending_files[user_id]['files'].append({
+        # Add file to batch
+        self.user_batches[user_id]['files'].append({
             'document': document,
             'message': update.message
         })
         
-        # Send "Please wait..." only for the first file
-        if len(self.pending_files[user_id]['files']) == 1 and not self.pending_files[user_id]['processing']:
-            self.pending_files[user_id]['progress_msg'] = await update.message.reply_text("⏳ Please wait...")
-            self.pending_files[user_id]['processing'] = True
-            
-            # Wait for potential additional files
-            await asyncio.sleep(3)
-            
-            # Process all collected files
-            if user_id in self.pending_files and self.pending_files[user_id]['files']:
-                await self.process_user_files(user_id, context)
+        # Send "Please wait..." only for first file
+        if len(self.user_batches[user_id]['files']) == 1:
+            self.user_batches[user_id]['progress_msg'] = await update.message.reply_text("⏳ Please wait...")
+        
+        # Cancel existing timer and set new one
+        if self.user_batches[user_id]['timer_task']:
+            self.user_batches[user_id]['timer_task'].cancel()
+        
+        # Set timer to process batch after 3 seconds of no new files
+        self.user_batches[user_id]['timer_task'] = asyncio.create_task(
+            self._process_batch_after_delay(user_id, context)
+        )
     
-    async def process_user_files(self, user_id: int, context: ContextTypes.DEFAULT_TYPE) -> None:
-        """Process all pending files for a user."""
-        if user_id not in self.pending_files or not self.pending_files[user_id]['files']:
+    async def _process_batch_after_delay(self, user_id: int, context: ContextTypes.DEFAULT_TYPE):
+        """Process user's batch after delay."""
+        await asyncio.sleep(3)  # Wait 3 seconds for more files
+        
+        if user_id in self.user_batches:
+            await self._process_user_batch(user_id, context)
+    
+    async def _process_user_batch(self, user_id: int, context: ContextTypes.DEFAULT_TYPE):
+        """Process all files in user's batch."""
+        if user_id not in self.user_batches:
             return
         
-        user_data = self.pending_files[user_id]
-        files_to_process = user_data['files'].copy()
-        progress_msg = user_data['progress_msg']
+        batch = self.user_batches[user_id]
+        files = batch['files']
+        progress_msg = batch['progress_msg']
         
-        # Clear pending files immediately to prevent double processing
-        del self.pending_files[user_id]
+        # Clear batch immediately
+        del self.user_batches[user_id]
+        
+        if not files:
+            return
         
         converted_files = []
         temp_files = []
         
         try:
-            for i, file_info in enumerate(files_to_process):
+            for file_info in files:
                 document = file_info['document']
-                
-                # Update progress (only if multiple files)
-                if len(files_to_process) > 1:
-                    await progress_msg.edit_text(
-                        f"🔄 Processing {i+1}/{len(files_to_process)}: {document.file_name}"
-                    )
                 
                 # Download the file
                 file_obj = await context.bot.get_file(document.file_id)
@@ -566,7 +506,7 @@ class TelegramBot:
                 # Validate SVG
                 is_valid, error_msg = await self.converter.validate_svg_file(svg_file.name)
                 if not is_valid:
-                    await progress_msg.edit_text(f"❌ Error with {document.file_name}: {error_msg}")
+                    logger.warning(f"Validation failed for {document.file_name}: {error_msg}")
                     continue
                 
                 # Convert to TGS
@@ -580,12 +520,14 @@ class TelegramBot:
                         'original_name': document.file_name
                     })
                 else:
-                    await progress_msg.edit_text(f"❌ Conversion failed for {document.file_name}: {error_msg}")
+                    logger.warning(f"Conversion failed for {document.file_name}: {error_msg}")
+            
+            # Update progress to "Done ✅"
+            if progress_msg:
+                await progress_msg.edit_text("Done ✅")
             
             # Send converted files
             if converted_files:
-                await progress_msg.edit_text("Done ✅")
-                
                 for converted_file in converted_files:
                     tgs_name = converted_file['original_name'].replace('.svg', '.tgs')
                     
@@ -594,18 +536,19 @@ class TelegramBot:
                             user_id,
                             document=tgs_f,
                             filename=tgs_name,
-                            caption=f"✅ Converted: {tgs_name}"
+                            caption=f"✅ {tgs_name}"
                         )
                 
                 # Log conversion
                 self.db.log_conversion(user_id, len(converted_files))
-            
             else:
-                await progress_msg.edit_text("❌ No files could be converted.")
+                if progress_msg:
+                    await progress_msg.edit_text("❌ No files could be converted.")
         
         except Exception as e:
-            logger.error(f"Error processing files for user {user_id}: {e}")
-            await progress_msg.edit_text("❌ An error occurred during processing.")
+            logger.error(f"Error processing batch for user {user_id}: {e}")
+            if progress_msg:
+                await progress_msg.edit_text("❌ An error occurred during processing.")
         
         finally:
             # Clean up temporary files
