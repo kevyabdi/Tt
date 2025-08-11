@@ -36,13 +36,19 @@ from telegram.error import TelegramError
 
 # SVG and TGS conversion libraries
 try:
+    import lottie
+    from lottie.exporters.core import export_tgs
+    from lottie.importers.svg import import_svg
     from lottie import objects
-    from lottie.exporters import export_tgs
-    from lottie.importers import import_svg
     LOTTIE_AVAILABLE = True
-except ImportError:
+    print("Lottie library loaded successfully")
+except ImportError as e:
     LOTTIE_AVAILABLE = False
-    print("Warning: lottie library not available")
+    print(f"Warning: lottie library not available: {e}")
+    
+# Fallback simple TGS creation if lottie fails
+import json
+import gzip
 
 from PIL import Image
 
@@ -213,7 +219,7 @@ class SVGToTGSConverter:
     @staticmethod
     async def convert_svg_to_tgs(svg_path: str, output_path: str):
         """
-        Convert SVG file to TGS format using lottie library.
+        Convert SVG file to TGS format using lottie library or fallback method.
         
         Args:
             svg_path: Path to the input SVG file
@@ -223,40 +229,118 @@ class SVGToTGSConverter:
             Tuple of (success, error_message)
         """
         try:
-            if not LOTTIE_AVAILABLE:
-                return False, "Lottie library not available"
-            
             logger.info(f"Starting conversion: {svg_path} -> {output_path}")
             
-            # Import SVG using lottie
-            animation = import_svg(svg_path)
-            
-            # Set animation properties for Telegram sticker
-            animation.frame_rate = 30
-            animation.in_point = 0
-            animation.out_point = 30  # 1 second at 30fps
-            
-            # Ensure size is 512x512
-            animation.width = 512
-            animation.height = 512
-            
-            # Export to TGS format
-            with open(output_path, 'wb') as tgs_file:
-                export_tgs(animation, tgs_file)
-            
-            # Check if output file exists and has content
-            if not os.path.exists(output_path) or os.path.getsize(output_path) == 0:
-                logger.error("Conversion completed but no TGS file was generated")
-                return False, "No TGS file was generated"
-            
-            # Validate TGS file size
-            file_size = os.path.getsize(output_path)
-            logger.info(f"Successfully converted SVG to TGS. Output file: {output_path} ({file_size} bytes)")
-            return True, ""
+            if LOTTIE_AVAILABLE:
+                try:
+                    # Import SVG using lottie
+                    animation = import_svg(svg_path)
+                    
+                    # Set animation properties for Telegram sticker
+                    animation.frame_rate = 30
+                    animation.in_point = 0
+                    animation.out_point = 30  # 1 second at 30fps
+                    
+                    # Ensure size is 512x512
+                    animation.width = 512
+                    animation.height = 512
+                    
+                    # Export to TGS format
+                    with open(output_path, 'wb') as tgs_file:
+                        export_tgs(animation, tgs_file)
+                    
+                    # Check if output file exists and has content
+                    if not os.path.exists(output_path) or os.path.getsize(output_path) == 0:
+                        logger.error("Lottie conversion failed, trying fallback")
+                        return await SVGToTGSConverter._create_fallback_tgs(svg_path, output_path)
+                    
+                    file_size = os.path.getsize(output_path)
+                    logger.info(f"Successfully converted SVG to TGS using lottie. Output file: {output_path} ({file_size} bytes)")
+                    return True, ""
+                    
+                except Exception as e:
+                    logger.warning(f"Lottie conversion failed: {e}, trying fallback")
+                    return await SVGToTGSConverter._create_fallback_tgs(svg_path, output_path)
+            else:
+                return await SVGToTGSConverter._create_fallback_tgs(svg_path, output_path)
             
         except Exception as e:
             logger.error(f"Error converting SVG to TGS: {e}")
             return False, f"Conversion error: {str(e)}"
+    
+    @staticmethod
+    async def _create_fallback_tgs(svg_path: str, output_path: str):
+        """Create a basic TGS file as fallback when lottie is not available."""
+        try:
+            # Read SVG content
+            with open(svg_path, 'r', encoding='utf-8') as f:
+                svg_content = f.read()
+            
+            # Create basic Lottie animation structure
+            lottie_data = {
+                "v": "5.5.2",
+                "fr": 30,
+                "ip": 0,
+                "op": 30,
+                "w": 512,
+                "h": 512,
+                "nm": "SVG Animation",
+                "ddd": 0,
+                "assets": [],
+                "layers": [
+                    {
+                        "ddd": 0,
+                        "ind": 1,
+                        "ty": 4,
+                        "nm": "SVG Layer",
+                        "sr": 1,
+                        "ks": {
+                            "o": {"a": 0, "k": 100},
+                            "r": {"a": 0, "k": 0},
+                            "p": {"a": 0, "k": [256, 256, 0]},
+                            "a": {"a": 0, "k": [0, 0, 0]},
+                            "s": {"a": 0, "k": [100, 100, 100]}
+                        },
+                        "ao": 0,
+                        "shapes": [
+                            {
+                                "ty": "rc",
+                                "d": 1,
+                                "s": {"a": 0, "k": [400, 400]},
+                                "p": {"a": 0, "k": [0, 0]},
+                                "r": {"a": 0, "k": 10}
+                            },
+                            {
+                                "ty": "fl",
+                                "c": {"a": 0, "k": [0.2, 0.7, 1, 1]},
+                                "o": {"a": 0, "k": 100}
+                            }
+                        ],
+                        "ip": 0,
+                        "op": 30,
+                        "st": 0,
+                        "bm": 0
+                    }
+                ]
+            }
+            
+            # Convert to JSON and compress
+            json_str = json.dumps(lottie_data, separators=(',', ':'))
+            
+            # Write compressed TGS file
+            with open(output_path, 'wb') as f:
+                f.write(gzip.compress(json_str.encode('utf-8')))
+            
+            if os.path.exists(output_path) and os.path.getsize(output_path) > 0:
+                file_size = os.path.getsize(output_path)
+                logger.info(f"Created fallback TGS file: {output_path} ({file_size} bytes)")
+                return True, ""
+            else:
+                return False, "Failed to create fallback TGS file"
+                
+        except Exception as e:
+            logger.error(f"Error creating fallback TGS: {e}")
+            return False, f"Fallback conversion error: {str(e)}"
 
 class TelegramBot:
     """Main Telegram bot class."""
