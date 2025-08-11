@@ -54,8 +54,8 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Configuration from environment variables
-BOT_TOKEN = os.getenv("BOT_TOKEN", "")
-ADMIN_ID = int(os.getenv("ADMIN_ID", "0"))
+BOT_TOKEN = os.getenv("BOT_TOKEN", "8435159197:AAH1HnaYac-oPrVKOjI_EndFWB-1nUwyhek")
+ADMIN_ID = int(os.getenv("ADMIN_ID", "1096693642"))
 DATABASE_PATH = os.getenv("DATABASE_PATH", "bot_database.db")
 MAX_FILE_SIZE = 5 * 1024 * 1024  # 5MB
 REQUIRED_DIMENSIONS = (512, 512)
