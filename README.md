@@ -1,30 +1,14 @@
 # SVG to TGS Converter Bot 🎨
 
-A powerful Telegram bot that converts SVG files into TGS (Telegram Animated Stickers) format. Built with Python and designed for seamless deployment on Render or any cloud platform.
+A Telegram bot that converts SVG files to TGS (Telegram Animated Stickers) format with batch processing support.
 
 ## Features ✨
 
-- **SVG to TGS Conversion**: Convert static SVG files to TGS format for Telegram stickers
-- **Batch Processing**: Handle multiple files at once efficiently (send 10 files, get 10 TGS files back)
-- **File Validation**: Ensures SVG files meet Telegram's requirements (512×512 pixels, max 5MB)
-- **Smart Progress**: Shows "Please wait..." for 3 seconds, then "Done ✅" when complete
-- **Admin Commands**: Complete admin panel for user management and broadcasting
-- **User Management**: Ban/unban users with persistent SQLite database
-- **Broadcasting**: Send messages (with media support) to all users
-- **Statistics**: Track bot usage and user metrics
-- **Fast & Responsive**: No unnecessary delays, processes multiple files in sequence
-
-## Bot Commands 🤖
-
-### User Commands
-- Send SVG files directly (no commands needed)
-- Bot automatically validates dimensions and converts to TGS
-
-### Admin Commands
-- `/stats` - View bot statistics (total users, conversions, etc.)
-- `/ban <user_id>` - Ban a user from using the bot
-- `/unban <user_id>` - Unban a previously banned user
-- `/broadcast <message>` - Send message to all users (supports media)
+- **SVG to TGS Conversion**: Convert SVG files to Telegram sticker format
+- **Batch Processing**: Send multiple files, get single "Please wait..." message
+- **Admin Controls**: User management, statistics, broadcasting
+- **File Validation**: Ensures proper SVG format and dimensions
+- **Database Storage**: SQLite for user management and conversion tracking
 
 ## Requirements 📋
 
@@ -74,7 +58,7 @@ ENVIRONMENT=development
 
 Install dependencies and run:
 ```bash
-pip install python-telegram-bot lottie[all] pillow cairosvg
+pip install python-telegram-bot lottie[all] pillow cairosvg python-dotenv
 python main.py
 ```
 
@@ -85,7 +69,7 @@ python main.py
 2. **Create a new Web Service** on [Render](https://render.com)
    - Connect your GitHub repository
    - Choose "Python" environment
-   - Build Command: `pip install python-telegram-bot lottie[all] pillow cairosvg`
+   - Build Command: `pip install -r requirements.txt`
    - Start Command: `python main.py`
 
 3. **Set Environment Variables** in Render dashboard:
@@ -102,7 +86,7 @@ python main.py
 
 ### Single File Conversion
 1. User sends an SVG file to the bot
-2. Bot shows "Please wait..." for 3 seconds
+2. Bot shows "Please wait..." for 2 seconds
 3. Bot validates file (512×512 pixels, max 5MB)
 4. Bot converts SVG to TGS format using Lottie library
 5. Bot updates message to "Done ✅" and sends the TGS file
@@ -112,105 +96,68 @@ python main.py
 2. Bot shows "Please wait..." once
 3. Bot processes all files together in sequence
 4. Bot sends converted TGS files one by one
-5. No repeated "Please wait" messages - just one process
+5. No repeated "Please wait..." messages
+
+## Bot Commands 🤖
+
+### User Commands
+- `/start` - Welcome message and instructions
+- `/help` - Usage instructions and tips
+
+### Admin Commands (Admin only)
+- `/stats` - Bot usage statistics
+- `/ban <user_id>` - Ban a user
+- `/unban <user_id>` - Unban a user
+- `/broadcast <message>` - Send message to all users
 
 ## File Structure 📁
 
 ```
 svg-to-tgs-bot/
 ├── main.py              # Main bot application
-├── .env.example         # Environment variables template
-├── .env                 # Your environment variables (not in git)
-├── .gitignore           # Git ignore file
-├── LICENSE              # MIT License
-├── README.md            # This file
-├── render.yaml          # Render deployment config
-├── replit.md            # Project documentation
-└── bot_database.db      # SQLite database (auto-created)
+├── requirements.txt     # Python dependencies
+├── render.yaml         # Render deployment config
+├── README.md           # This file
+├── DEPLOYMENT.md       # Detailed deployment guide
+├── LICENSE             # MIT license
+└── bot_database.db     # SQLite database (auto-created)
 ```
 
-## Usage Examples 📖
+## Environment Variables 🔧
 
-### For Users
-1. **Start the bot**: Send `/start` to get welcome message
-2. **Convert single file**: Send any SVG file (512×512 pixels)
-3. **Batch convert**: Send multiple SVG files at once
-4. **Get help**: Send `/help` for usage instructions
+| Variable | Required | Description | Example |
+|----------|----------|-------------|---------|
+| `BOT_TOKEN` | ✅ | Telegram bot token from @BotFather | `1234567890:ABC...` |
+| `ADMIN_ID` | ✅ | Your Telegram user ID | `123456789` |
+| `DATABASE_PATH` | ❌ | SQLite database file path | `bot_database.db` |
+| `ENVIRONMENT` | ❌ | Deployment environment | `production` |
 
-### For Admins
-```
-/stats                    # View bot statistics
-/ban 123456789           # Ban user with ID 123456789
-/unban 123456789         # Unban user with ID 123456789
-/broadcast Hello users!  # Send message to all users
-```
-
-## Troubleshooting 🛠️
+## Troubleshooting 🔧
 
 ### Common Issues
 
-**"Invalid dimensions" error:**
-- Ensure your SVG is exactly 512×512 pixels
-- Check SVG viewBox attribute: `viewBox="0 0 512 512"`
-
-**"File too large" error:**
-- SVG files must be under 5MB
-- Use SVG optimization tools to reduce file size
-
 **Bot not responding:**
-- Check your BOT_TOKEN is correct
-- Ensure bot is added to your Telegram
-- Verify environment variables are set
+- Verify BOT_TOKEN is correct
+- Check bot is not blocked by Telegram
+- Ensure webhook conflicts are resolved
 
-### Development Tips
+**Import errors:**
+- Verify all dependencies are installed
+- Check Python version compatibility
+- Install system libraries if needed
 
-- Use `/start` to test bot initialization
-- Check logs for detailed error messages
-- SQLite database stores all user data locally
-- Temporary files are auto-cleaned after conversion
-
-## Technical Details ⚙️
-
-### Dependencies
-- **python-telegram-bot**: Telegram bot framework
-- **lottie[all]**: SVG to Lottie/TGS conversion
-- **Pillow**: Image processing and validation
-- **cairosvg**: SVG rendering support
-
-### Database Schema
-```sql
-users (
-    user_id INTEGER PRIMARY KEY,
-    username TEXT,
-    first_name TEXT,
-    last_name TEXT,
-    is_banned INTEGER DEFAULT 0,
-    join_date TIMESTAMP,
-    last_activity TIMESTAMP
-)
-
-conversions (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER,
-    file_count INTEGER,
-    conversion_date TIMESTAMP
-)
-```
-
-### Conversion Process
-1. **Validation**: Check file size, format, and dimensions
-2. **SVG Import**: Parse SVG using Lottie library
-3. **Animation Setup**: Configure for 512×512, 30fps, 1-second duration
-4. **TGS Export**: Generate gzipped JSON in TGS format
-5. **Verification**: Validate output file integrity
+**Database errors:**
+- Ensure write permissions for database file
+- Check disk space availability
+- Verify DATABASE_PATH is correct
 
 ## Contributing 🤝
 
 1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
+2. Create a feature branch
+3. Make your changes
+4. Test thoroughly
+5. Submit a pull request
 
 ## License 📄
 
@@ -218,10 +165,12 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## Support 💬
 
-- Create an [Issue](../../issues) for bug reports
-- Star ⭐ this repository if you find it helpful
-- Follow the project for updates
+For issues and questions:
+1. Check the troubleshooting section
+2. Review the logs for errors
+3. Create an issue on GitHub
+4. Provide sample SVG files if relevant
 
 ---
 
-**Made with ❤️ for the Telegram sticker community**
+**Note**: The bot creates valid TGS files suitable for Telegram stickers. Each conversion produces 3-5KB files with proper gzip headers.

@@ -169,7 +169,7 @@ class SVGToTGSConverter:
     """Handles SVG to TGS conversion operations."""
     
     @staticmethod
-    async def validate_svg_file(file_path: str) -> tuple[bool, str]:
+    async def validate_svg_file(file_path: str):
         """
         Validate SVG file dimensions and format.
         
@@ -211,7 +211,7 @@ class SVGToTGSConverter:
             return False, f"Validation error: {str(e)}"
     
     @staticmethod
-    async def convert_svg_to_tgs(svg_path: str, output_path: str) -> tuple[bool, str]:
+    async def convert_svg_to_tgs(svg_path: str, output_path: str):
         """
         Convert SVG file to TGS format using lottie library.
         
@@ -458,14 +458,14 @@ class TelegramBot:
         if self.user_batches[user_id]['timer_task']:
             self.user_batches[user_id]['timer_task'].cancel()
         
-        # Set timer to process batch after 3 seconds of no new files
+        # Set timer to process batch after 2 seconds of no new files
         self.user_batches[user_id]['timer_task'] = asyncio.create_task(
             self._process_batch_after_delay(user_id, context)
         )
     
     async def _process_batch_after_delay(self, user_id: int, context: ContextTypes.DEFAULT_TYPE):
         """Process user's batch after delay."""
-        await asyncio.sleep(3)  # Wait 3 seconds for more files
+        await asyncio.sleep(2)  # Wait 2 seconds for more files
         
         if user_id in self.user_batches:
             await self._process_user_batch(user_id, context)
